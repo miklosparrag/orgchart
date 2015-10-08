@@ -1,5 +1,29 @@
 __author__ = 'miklos'
 
+# Do OAuth2 stuff to create credentials object
+
+from oauth2client.file import Storage
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.tools import run_flow
+
+class flags:
+    logging_level = 'DEBUG'
+    noauth_local_webserver = True
+
+import logging
+
+storage = Storage("creds.dat")
+
+credentials = storage.get()
+if credentials is None or credentials.invalid:
+   credentials = run_flow(flow_from_clientsecrets("client_secrets.json", scope=["https://spreadsheets.google.com/feeds"]), storage, flags)
+
+# Use it within gdata
+
+import gdata.spreadsheets.client
+
+import gdata.gauth
+
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4,A1, landscape
 from reportlab.platypus import Paragraph, Frame
@@ -9,21 +33,17 @@ from reportlab.lib.colors import HexColor
 import gdata.docs
 import gdata.docs.service
 import gdata.spreadsheet.service
-import getpass
 
 # Connect to Google
-gd_client = gdata.spreadsheet.service.SpreadsheetsService()
-gd_client.email = 'miklos@we7.com'
-gd_client.password = getpass.getpass("password:")
-gd_client.source = 'we7.com'
-gd_client.ProgrammaticLogin()
+gd_client = gdata.spreadsheets.client.SpreadsheetsClient()
 
-q = gdata.spreadsheet.service.DocumentQuery()
-q['title'] = 'Orgchart'
-q['title-exact'] = 'true'
-feed = gd_client.GetSpreadsheetsFeed(query=q)
+auth2token = gdata.gauth.OAuth2TokenFromCredentials(credentials)
+gd_client = auth2token.authorize(gd_client)
+
+q = gdata.spreadsheets.client.SpreadsheetQuery (title="Orgchart", title_exact=True)
+feed = gd_client.get_spreadsheets(query=q)
 spreadsheet_id = feed.entry[0].id.text.rsplit('/',1)[1]
-feed = gd_client.GetWorksheetsFeed(spreadsheet_id)
+feed = gd_client.get_worksheets(spreadsheet_id)
 worksheet_id1 = feed.entry[0].id.text.rsplit('/',1)[1]
 worksheet_id2 = feed.entry[1].id.text.rsplit('/',1)[1]
 
@@ -83,7 +103,7 @@ colors = [
 pageTitles = {}
 
 for row in titlerows:
-    pageTitles[row.custom['pageid'].text] = row.custom['title'].text
+    pageTitles[row.get_value('pageid')] = row.get_value('title')
 
 LondonFTEs = 0
 OxfordFTEs = 0
@@ -337,19 +357,19 @@ pages = {}
 
 for row in rows:
 
-    if int(row.custom['org.chart'].text)== -1:
+    if int(row.get_value('org.chart')) == -1:
         continue
 
-    status = row.custom['status'].text or ''
-    location = row.custom['baselocation'].text or ''
-    name = row.custom['name'].text or ''
-    title = row.custom['title'].text or ''
-    reportsto = row.custom['reportsto'].text or ''
-    level = int(row.custom['org.chart'].text)
-    startdate = row.custom['startdate'].text or ''
-    team = row.custom['team'].text or ''
-    desk = row.custom['desk'].text or ''
-    inpage = row.custom['inpage'].text or ''
+    status = row.get_value('status') or ''
+    location = row.get_value('baselocation') or ''
+    name = row.get_value('name') or ''
+    title = row.get_value('title') or ''
+    reportsto = row.get_value('reportsto') or ''
+    level = int(row.get_value('org.chart'))
+    startdate = row.get_value('startdate') or ''
+    team = row.get_value('team') or ''
+    desk = row.get_value('desk') or ''
+    inpage = row.get_value('inpage') or ''
 
     if status.upper() == 'CONTRACTOR':
         Contractors += 1
@@ -376,9 +396,9 @@ for p in pages.values():
 
 
 if BIG:
-    c = canvas.Canvas("/Users/miklos/Google Drive/Technology Org Charts/orgchartBIG.pdf", pagesize = landscape(A1))
+    c = canvas.Canvas("orgchartBIG.pdf", pagesize = landscape(A1))
 else:
-    c = canvas.Canvas("/Users/miklos/Google Drive/Technology Org Charts/orgchart.pdf", pagesize = landscape(A4))
+    c = canvas.Canvas("orgchart.pdf", pagesize = landscape(A4))
 
 k = pages.keys()
 k.sort()
